@@ -1,0 +1,17 @@
+# Java / Maven
+target/
+*.class
+*.jar
+
+# IDE
+.idea/
+*.iml
+.vscode/
+
+# Secrets - NEVER commit these
+.env
+*.pem
+*.key
+
+# OS
+.DS_Store
