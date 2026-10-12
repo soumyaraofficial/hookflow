@@ -1,0 +1,20 @@
+services:
+  postgres:
+    image: postgres:16-alpine
+    container_name: hookflow-postgres
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB:-hookflow}
+      POSTGRES_USER: ${POSTGRES_USER:-hookflow}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD in .env}
+    ports:
+      - "5433:5432"
+    volumes:
+      - hookflow-pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-hookflow} -d ${POSTGRES_DB:-hookflow}"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+volumes:
+  hookflow-pgdata:

@@ -12,6 +12,6 @@ target/
 .env
 *.pem
 *.key
-
+.env
 # OS
 .DS_Store
