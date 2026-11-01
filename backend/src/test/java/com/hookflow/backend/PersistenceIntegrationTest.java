@@ -1,22 +1,20 @@
-
 package com.hookflow.backend;
 
+import com.hookflow.backend.auth.RefreshToken;
+import com.hookflow.backend.auth.RefreshTokenRepository;
 import com.hookflow.backend.auth.User;
 import com.hookflow.backend.auth.UserRepository;
 import com.hookflow.backend.tenant.Tenant;
+import com.hookflow.backend.tenant.TenantMembership;
+import com.hookflow.backend.tenant.TenantMembershipRepository;
 import com.hookflow.backend.tenant.TenantRepository;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.context.annotation.Import;
 import org.springframework.dao.DataIntegrityViolationException;
-import com.hookflow.backend.tenant.TenantMembership;
-import com.hookflow.backend.tenant.TenantMembershipRepository;
-import java.util.UUID;
-import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
-import org.springframework.dao.DataIntegrityViolationException;
-
+import java.time.Instant;
 import java.util.UUID;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -25,13 +23,18 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 @Import(TestcontainersConfiguration.class)
 @SpringBootTest
 class PersistenceIntegrationTest {
+
     @Autowired
     TenantMembershipRepository memberships;
+
     @Autowired
     TenantRepository tenants;
 
     @Autowired
     UserRepository users;
+
+    @Autowired
+    RefreshTokenRepository refreshTokens;
 
     @Test
     void savesAndLoadsTenant() {
@@ -42,6 +45,7 @@ class PersistenceIntegrationTest {
         assertThat(loaded.getName()).isEqualTo("Acme");
         assertThat(loaded.getStatus()).isEqualTo("ACTIVE");
     }
+
     @Test
     void savesAndLoadsTenantMembership() {
         Tenant tenant = tenants.saveAndFlush(
@@ -71,6 +75,7 @@ class PersistenceIntegrationTest {
         assertThat(loaded.getRole()).isEqualTo("ADMIN");
         assertThat(loaded.getStatus()).isEqualTo("ACTIVE");
     }
+
     @Test
     void rejectsDuplicateTenantMembership() {
         Tenant tenant = tenants.saveAndFlush(
@@ -101,6 +106,7 @@ class PersistenceIntegrationTest {
         assertThatThrownBy(() -> memberships.saveAndFlush(duplicate))
                 .isInstanceOf(DataIntegrityViolationException.class);
     }
+
     @Test
     void savesAndLoadsUser() {
         String email = "alice-" + UUID.randomUUID()
@@ -132,5 +138,42 @@ class PersistenceIntegrationTest {
 
         assertThatThrownBy(() -> users.saveAndFlush(duplicate))
                 .isInstanceOf(DataIntegrityViolationException.class);
+    }
+
+    @Test
+    void savesLoadsAndRevokesRefreshToken() {
+        User user = users.saveAndFlush(
+                new User(
+                        "refresh-" + UUID.randomUUID() + "@example.com",
+                        "test-password-hash"
+                )
+        );
+
+        String tokenHash = UUID.randomUUID().toString();
+
+        RefreshToken saved = refreshTokens.saveAndFlush(
+                new RefreshToken(
+                        user.getId(),
+                        tokenHash,
+                        Instant.now().plusSeconds(3600)
+                )
+        );
+
+        RefreshToken loaded = refreshTokens
+                .findByTokenHash(tokenHash)
+                .orElseThrow();
+
+        assertThat(loaded.getId()).isEqualTo(saved.getId());
+        assertThat(loaded.getTokenHash()).isEqualTo(tokenHash);
+        assertThat(loaded.getRevokedAt()).isNull();
+
+        loaded.revoke();
+        refreshTokens.saveAndFlush(loaded);
+
+        RefreshToken revoked = refreshTokens
+                .findByTokenHash(tokenHash)
+                .orElseThrow();
+
+        assertThat(revoked.getRevokedAt()).isNotNull();
     }
 }
