@@ -22,7 +22,7 @@ retries failures, and records every attempt.
 
 ## Status
 
-Phase 1 - Foundation (in progress)
+Phase 1 - Foundation (Completed)
 
 ## Quick start
 
@@ -99,4 +99,4 @@ This does not remove the database volume.
 
 ## Development status
 
-Phase 1 - Foundation (in progress; clean-clone verification pending)
+Phase 1 - Foundation (Completed; clean-clone verification passed)
