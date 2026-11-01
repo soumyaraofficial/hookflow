@@ -1,5 +1,10 @@
 package com.hookflow.backend;
-
+import org.springframework.web.server.ResponseStatusException;
+import com.hookflow.backend.auth.AuthService;
+import com.hookflow.backend.auth.RegisterRequest;
+import com.hookflow.backend.auth.RegisterResponse;
+import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import com.hookflow.backend.auth.RefreshToken;
 import com.hookflow.backend.auth.RefreshTokenRepository;
 import com.hookflow.backend.auth.User;
@@ -23,7 +28,8 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 @Import(TestcontainersConfiguration.class)
 @SpringBootTest
 class PersistenceIntegrationTest {
-
+    @Autowired
+    AuthService authService;
     @Autowired
     TenantMembershipRepository memberships;
 
@@ -139,7 +145,40 @@ class PersistenceIntegrationTest {
         assertThatThrownBy(() -> users.saveAndFlush(duplicate))
                 .isInstanceOf(DataIntegrityViolationException.class);
     }
+    @Test
+    void registersUserTenantAndAdminMembership() {
+        String email = "register-" + UUID.randomUUID() + "@example.com";
 
+        RegisterResponse response = authService.register(
+                new RegisterRequest(email, "test-password-123", "Acme Test")
+        );
+
+        User user = users.findById(response.userId()).orElseThrow();
+        Tenant tenant = tenants.findById(response.tenantId()).orElseThrow();
+        TenantMembership membership = memberships
+                .findByTenantIdAndUserId(tenant.getId(), user.getId())
+                .orElseThrow();
+
+        assertThat(response.email()).isEqualTo(email);
+        assertThat(tenant.getName()).isEqualTo("Acme Test");
+        assertThat(membership.getRole()).isEqualTo("ADMIN");
+        assertThat(user.getPasswordHash()).isNotEqualTo("test-password-123");
+    }
+
+    @Test
+    void rejectsRegistrationWithExistingEmail() {
+        String email = "duplicate-register-" + UUID.randomUUID() + "@example.com";
+
+        authService.register(
+                new RegisterRequest(email, "test-password-123", "First Tenant")
+        );
+
+        assertThatThrownBy(() -> authService.register(
+                new RegisterRequest(email, "another-password-123", "Second Tenant")
+        ))
+                .isInstanceOf(ResponseStatusException.class)
+                .hasMessageContaining("409 CONFLICT");
+    }
     @Test
     void savesLoadsAndRevokesRefreshToken() {
         User user = users.saveAndFlush(
