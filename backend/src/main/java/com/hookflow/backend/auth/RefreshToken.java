@@ -34,14 +34,21 @@ public class RefreshToken {
     protected RefreshToken() {
     }
 
-    public RefreshToken(UUID userId, String tokenHash, Instant expiresAt) {
+    @Column(name = "tenant_id", nullable = false)
+    private UUID tenantId;
+
+    public RefreshToken(UUID userId, UUID tenantId, String tokenHash, Instant expiresAt) {
         this.id = UUID.randomUUID();
         this.userId = userId;
+        this.tenantId = tenantId;
         this.tokenHash = tokenHash;
         this.expiresAt = expiresAt;
         this.createdAt = Instant.now();
     }
 
+    public UUID getTenantId() {
+        return tenantId;
+    }
     public UUID getId() {
         return id;
     }

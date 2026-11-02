@@ -190,9 +190,12 @@ class PersistenceIntegrationTest {
 
         String tokenHash = UUID.randomUUID().toString();
 
+        Tenant tenant = tenants.saveAndFlush(new Tenant("Refresh Test " + UUID.randomUUID()));
+
         RefreshToken saved = refreshTokens.saveAndFlush(
                 new RefreshToken(
                         user.getId(),
+                        tenant.getId(),
                         tokenHash,
                         Instant.now().plusSeconds(3600)
                 )
