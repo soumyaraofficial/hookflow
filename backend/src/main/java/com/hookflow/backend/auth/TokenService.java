@@ -1,5 +1,5 @@
 package com.hookflow.backend.auth;
-
+import java.util.List;
 import com.hookflow.backend.tenant.Tenant;
 import com.hookflow.backend.tenant.TenantMembership;
 import org.springframework.security.oauth2.jose.jws.MacAlgorithm;
@@ -38,7 +38,8 @@ public class TokenService {
         Instant now = Instant.now();
 
         JwtClaimsSet claims = JwtClaimsSet.builder()
-                .issuer("hookflow")
+                .issuer(JwtConfig.ISSUER)
+                .audience(List.of(JwtConfig.AUDIENCE))
                 .subject(user.getId().toString())
                 .issuedAt(now)
                 .expiresAt(now.plus(

@@ -1,0 +1,135 @@
+package com.hookflow.backend;
+
+import com.hookflow.backend.auth.AuthService;
+import com.hookflow.backend.auth.LoginRequest;
+import com.hookflow.backend.auth.LoginResponse;
+import com.hookflow.backend.auth.RegisterRequest;
+import com.hookflow.backend.auth.RegisterResponse;
+import com.nimbusds.jose.jwk.source.ImmutableSecret;
+import org.junit.jupiter.api.Test;
+import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.beans.factory.annotation.Value;
+import org.springframework.boot.test.context.SpringBootTest;
+import org.springframework.context.annotation.Import;
+import org.springframework.security.oauth2.jose.jws.MacAlgorithm;
+import org.springframework.security.oauth2.jwt.JwsHeader;
+import org.springframework.security.oauth2.jwt.JwtClaimsSet;
+import org.springframework.security.oauth2.jwt.JwtEncoderParameters;
+import org.springframework.security.oauth2.jwt.NimbusJwtEncoder;
+
+import javax.crypto.SecretKey;
+import javax.crypto.spec.SecretKeySpec;
+import java.net.URI;
+import java.net.http.HttpClient;
+import java.net.http.HttpRequest;
+import java.net.http.HttpResponse;
+import java.time.Instant;
+import java.util.Arrays;
+import java.util.List;
+import java.util.UUID;
+
+import static org.assertj.core.api.Assertions.assertThat;
+
+@Import(TestcontainersConfiguration.class)
+@SpringBootTest(webEnvironment = SpringBootTest.WebEnvironment.RANDOM_PORT)
+class SecurityIntegrationTest {
+
+    @Value("${local.server.port}")
+    int port;
+
+    @Autowired AuthService authService;
+    @Autowired SecretKey jwtSigningKey;
+
+    private final HttpClient http = HttpClient.newHttpClient();
+
+    private HttpResponse<String> get(String path, String bearer) throws Exception {
+        HttpRequest.Builder request = HttpRequest
+                .newBuilder(URI.create("http://localhost:" + port + path)).GET();
+        if (bearer != null) {
+            request.header("Authorization", "Bearer " + bearer);
+        }
+        return http.send(request.build(), HttpResponse.BodyHandlers.ofString());
+    }
+
+    private String forgedToken(SecretKey key, String issuer,
+                               List<String> audience, Instant expiresAt) {
+        JwtClaimsSet.Builder claims = JwtClaimsSet.builder()
+                .issuer(issuer)
+                .subject(UUID.randomUUID().toString())
+                .issuedAt(Instant.now().minusSeconds(900))
+                .expiresAt(expiresAt)
+                .claim("tenant_id", UUID.randomUUID().toString())
+                .claim("role", "ADMIN");
+        if (audience != null) {
+            claims.audience(audience);
+        }
+        return new NimbusJwtEncoder(new ImmutableSecret<>(key))
+                .encode(JwtEncoderParameters.from(
+                        JwsHeader.with(MacAlgorithm.HS256).build(), claims.build()))
+                .getTokenValue();
+    }
+
+    @Test
+    void healthEndpointIsPublic() throws Exception {
+        assertThat(get("/actuator/health", null).statusCode()).isEqualTo(200);
+    }
+
+    @Test
+    void meRequiresAToken() throws Exception {
+        assertThat(get("/api/v1/me", null).statusCode()).isEqualTo(401);
+    }
+
+    @Test
+    void meRejectsGarbageToken() throws Exception {
+        assertThat(get("/api/v1/me", "not-a-jwt").statusCode()).isEqualTo(401);
+    }
+
+    @Test
+    void meReturnsIdentityForValidToken() throws Exception {
+        String email = "me-" + UUID.randomUUID() + "@example.com";
+        RegisterResponse registered = authService.register(
+                new RegisterRequest(email, "test-password-123", "Me Tenant"));
+        LoginResponse login = authService.login(
+                new LoginRequest(email, "test-password-123", registered.tenantId()));
+
+        HttpResponse<String> response = get("/api/v1/me", login.accessToken());
+
+        assertThat(response.statusCode()).isEqualTo(200);
+        assertThat(response.body())
+                .contains(email)
+                .contains(registered.tenantId().toString())
+                .contains("ADMIN");
+    }
+
+    @Test
+    void rejectsTokenWithWrongAudience() throws Exception {
+        String token = forgedToken(jwtSigningKey, "hookflow",
+                List.of("someone-else"), Instant.now().plusSeconds(600));
+        assertThat(get("/api/v1/me", token).statusCode()).isEqualTo(401);
+    }
+
+    @Test
+    void rejectsTokenWithWrongIssuer() throws Exception {
+        String token = forgedToken(jwtSigningKey, "evil-issuer",
+                List.of("hookflow-api"), Instant.now().plusSeconds(600));
+        assertThat(get("/api/v1/me", token).statusCode()).isEqualTo(401);
+    }
+
+    @Test
+    void rejectsExpiredToken() throws Exception {
+        String token = forgedToken(jwtSigningKey, "hookflow",
+                List.of("hookflow-api"), Instant.now().minusSeconds(300));
+        assertThat(get("/api/v1/me", token).statusCode()).isEqualTo(401);
+    }
+
+    @Test
+    void rejectsTokenSignedWithAnotherKey() throws Exception {
+        byte[] otherBytes = new byte[32];
+        Arrays.fill(otherBytes, (byte) 7);
+        SecretKey otherKey = new SecretKeySpec(otherBytes, "HmacSHA256");
+
+        String token = forgedToken(otherKey, "hookflow",
+                List.of("hookflow-api"), Instant.now().plusSeconds(600));
+        assertThat(get("/api/v1/me", token).statusCode()).isEqualTo(401);
+    }
+}
