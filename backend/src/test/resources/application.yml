@@ -1,0 +1,3 @@
+app:
+  jwt:
+    secret: dGVzdC1vbmx5LWtleS1mb3ItaG9va2Zsb3ctdGVzdHMtMzI=
